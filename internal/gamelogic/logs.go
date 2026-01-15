@@ -6,7 +6,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const logsFile = "game.log"
@@ -29,4 +31,22 @@ func WriteLog(gamelog routing.GameLog) error {
 		return fmt.Errorf("could not write to logs file: %v", err)
 	}
 	return nil
+}
+
+func PublishLog(ch *amqp.Channel, username, message string) error {
+
+	gamelog := routing.GameLog{
+		Username:    username,
+		Message:     message,
+		CurrentTime: time.Now(),
+	}
+
+	err := pubsub.PublishGob(
+		ch,
+		string(routing.ExchangePerilTopic),
+		fmt.Sprintf("%s.%s", routing.GameLogSlug, gamelog.Username),
+		gamelog,
+	)
+
+	return err
 }
