@@ -133,10 +133,52 @@ func subscribe[T any](
 	exchange,
 	queueName,
 	key string,
-	simpleQueueType SimpleQueueType,
+	queueType SimpleQueueType,
 	handler func(T) AckType,
 	unmarshaller func([]byte) (T, error),
 ) error {
+
+	amqp_chan, amqp_queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return err
+	}
+
+	err = amqp_chan.Qos(10, 0, false)
+	if err != nil {
+		return err
+	}
+	delivery_chan, err := amqp_chan.Consume(amqp_queue.Name, "", false, false, false, false, nil)
+
+	go func() {
+		for m := range delivery_chan {
+			data, err := unmarshaller(m.Body)
+			if err != nil {
+				log.Println(err)
+			}
+
+			a := handler(data)
+			switch a {
+			case Ack:
+				log.Println("Responding Ack")
+				err = m.Ack(false)
+				if err != nil {
+					log.Println(err)
+				}
+			case NackDiscard:
+				log.Println("Responding NackDiscard")
+				err = m.Nack(false, false)
+				if err != nil {
+					log.Println(err)
+				}
+			case NackRequeue:
+				log.Println("Responding NackDiscard")
+				err = m.Nack(false, true)
+				if err != nil {
+					log.Println(err)
+				}
+			}
+		}
+	}()
 
 	return nil
 }
@@ -148,47 +190,23 @@ func SubscribeJSON[T any](
 	key string,
 	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
 	handler func(T) AckType,
-) (*amqp.Channel, error) {
-	amqp_chan, amqp_queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
-	if err != nil {
-		return nil, err
+) error {
+
+	um := func(mbody []byte) (T, error) {
+		data := new(T)
+		err := json.Unmarshal(mbody, data)
+		if err != nil {
+			return *data, err
+		}
+		return *data, nil
 	}
 
-	delivery_chan, err := amqp_chan.Consume(amqp_queue.Name, "", false, false, false, false, nil)
+	err := subscribe(conn, exchange, queueName, key, queueType, handler, um)
+	if err != nil {
+		return err
+	}
 
-	go func() {
-		for m := range delivery_chan {
-			data := new(T)
-			err := json.Unmarshal(m.Body, data)
-			if err != nil {
-				log.Println(err)
-			}
-
-			a := handler(*data)
-			switch a {
-			case Ack:
-				log.Println("Responding Ack")
-				err = m.Ack(false)
-				if err != nil {
-					log.Println(err)
-				}
-			case NackDiscard:
-				log.Println("Responding NackDiscard")
-				err = m.Nack(false, false)
-				if err != nil {
-					log.Println(err)
-				}
-			case NackRequeue:
-				log.Println("Responding NackDiscard")
-				err = m.Nack(false, true)
-				if err != nil {
-					log.Println(err)
-				}
-			}
-		}
-	}()
-
-	return amqp_chan, nil
+	return nil
 }
 
 func SubscribeGob[T any](
@@ -198,48 +216,26 @@ func SubscribeGob[T any](
 	key string,
 	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
 	handler func(T) AckType,
-) (*amqp.Channel, error) {
-	amqp_chan, amqp_queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
-	if err != nil {
-		return nil, err
+) error {
+
+	um := func(mbody []byte) (T, error) {
+		data := new(T)
+		var buf bytes.Buffer
+		buf.Write(mbody)
+
+		dec := gob.NewDecoder(&buf)
+		err := dec.Decode(data)
+		if err != nil {
+			return *data, err
+		}
+
+		return *data, nil
 	}
 
-	delivery_chan, err := amqp_chan.Consume(amqp_queue.Name, "", false, false, false, false, nil)
+	err := subscribe(conn, exchange, queueName, key, queueType, handler, um)
+	if err != nil {
+		return err
+	}
 
-	go func() {
-		for m := range delivery_chan {
-			data := new(T)
-			var buf bytes.Buffer
-
-			dec := gob.NewDecoder(&buf)
-			err := json.Unmarshal(m.Body, data)
-			if err != nil {
-				log.Println(err)
-			}
-
-			a := handler(*data)
-			switch a {
-			case Ack:
-				log.Println("Responding Ack")
-				err = m.Ack(false)
-				if err != nil {
-					log.Println(err)
-				}
-			case NackDiscard:
-				log.Println("Responding NackDiscard")
-				err = m.Nack(false, false)
-				if err != nil {
-					log.Println(err)
-				}
-			case NackRequeue:
-				log.Println("Responding NackDiscard")
-				err = m.Nack(false, true)
-				if err != nil {
-					log.Println(err)
-				}
-			}
-		}
-	}()
-
-	return amqp_chan, nil
+	return nil
 }

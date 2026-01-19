@@ -29,12 +29,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(
+	err = pubsub.SubscribeGob(
 		conn,
 		routing.ExchangePerilTopic,
-		"game_logs",
-		"game_logs.*",
+		string(routing.GameLogSlug),
+		fmt.Sprintf("%s.*", routing.GameLogSlug),
 		pubsub.Durable,
+		handlerLog(),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -44,8 +45,11 @@ func main() {
 
 repl:
 	for {
-		in := gamelogic.GetInput()[0]
-		switch in {
+		in := gamelogic.GetInput()
+		if len(in) == 0 {
+			continue
+		}
+		switch in[0] {
 		case "pause":
 			log.Println("Sending 'pause' message")
 			data := routing.PlayingState{

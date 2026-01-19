@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -36,7 +37,7 @@ func main() {
 
 	gs := gamelogic.NewGameState(username)
 
-	_, err = pubsub.SubscribeJSON(
+	err = pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilDirect,
 		fmt.Sprintf("%s.%s", routing.PauseKey, username),
@@ -48,7 +49,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	am_ch, err := pubsub.SubscribeJSON(
+	err = pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilTopic,
 		fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username),
@@ -60,7 +61,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_, err = pubsub.SubscribeJSON(
+	err = pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilTopic,
 		routing.WarRecognitionsPrefix,
@@ -93,7 +94,7 @@ repl:
 				fmt.Println(err)
 				continue
 			}
-			err = pubsub.PublishJSON(am_ch, string(routing.ExchangePerilTopic), fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username), am)
+			err = pubsub.PublishJSON(publishCh, string(routing.ExchangePerilTopic), fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username), am)
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -107,7 +108,28 @@ repl:
 			gamelogic.PrintClientHelp()
 
 		case "spam":
-			fmt.Println("Spamming not allowed yet!")
+			if len(in) < 2 {
+				fmt.Println("No number passed")
+				continue
+			}
+			msg_num, err := strconv.Atoi(in[1])
+			if err != nil {
+				fmt.Printf("could not convert %v to int\n", in[1])
+				continue
+			}
+			fmt.Printf("Spamming %d messages!\n", msg_num)
+
+			for range msg_num {
+				msg := gamelogic.GetMaliciousLog()
+				err := gamelogic.PublishLog(
+					publishCh,
+					gs.GetUsername(),
+					msg,
+				)
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
 
 		default:
 			fmt.Printf("Unrecognized commmand: %s\n", in[0])
